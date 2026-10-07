@@ -112,7 +112,7 @@ Referencia: [validación y entrega de webhooks](https://polar.sh/docs/integrate/
 
 ## Ramas y Railway
 
-El trabajo actual se realiza en `dev`. La rama `prd` se usará para los cambios aprobados y para los despliegues de producción en Railway. El pase se hará mediante un PR de `dev` a `prd` en cada repositorio cuando se decida publicar. No se promociona ni despliega automáticamente desde este trabajo local.
+Trabajamos en `dev` y publicamos desde `prd`. La primera versión de producción parte de `dev`; los siguientes cambios pasan mediante un PR de `dev` a `prd` en cada repositorio. Configura el servicio de Railway para seguir únicamente `prd` y esperar al CI. La guía enlazada más abajo detalla la configuración inicial del proyecto.
 
 `Dockerfile` y `railway.json` preparan este servicio para Railway: compilación en una etapa independiente, ejecución con dependencias de producción y health check en `/api/health`. El arranque aplica las migraciones PostgreSQL antes de escuchar solicitudes. No necesita un volumen local ni archivos del frontend.
 
