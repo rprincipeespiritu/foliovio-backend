@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
-import type Database from 'better-sqlite3'
+import type { Database } from './db.js'
 import type { Config } from './config.js'
 import type { AppEnv } from './types.js'
 import { authRoutes } from './modules/auth/routes.js'
@@ -12,7 +12,7 @@ import { subscriptionRoutes } from './modules/subscriptions/routes.js'
 import { adminRoutes } from './modules/subscriptions/admin.js'
 import { polarRoutes } from './modules/subscriptions/polar.js'
 
-export function createApp(db: Database.Database, config: Config) {
+export function createApp(db: Database, config: Config) {
   const app = new Hono<AppEnv>()
   const subscriptions = new SubscriptionService(db)
   const origins = config.isProd ? [config.appOrigin] : [config.appOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173']
@@ -27,7 +27,14 @@ export function createApp(db: Database.Database, config: Config) {
     c.set('user', await loadUser(c, db, config))
     await next()
   })
-  app.get('/api/health', (c) => c.json({ ok: true }))
+  app.get('/api/health', async (c) => {
+    try {
+      await db.query('SELECT 1')
+      return c.json({ ok: true })
+    } catch {
+      return c.json({ ok: false }, 503)
+    }
+  })
   app.route('/api/auth', authRoutes(db, config, subscriptions))
   app.route('/api/billing', subscriptionRoutes(subscriptions, config))
   app.route('/api/admin', adminRoutes(subscriptions, config))

@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { Database, SqlSession } from '../../db.js'
 import type { AuthUser, Subscription } from '../../contracts/api.js'
 import type { UserRow } from '../../db.js'
 
@@ -7,7 +7,7 @@ export interface SubscriptionRow {
   status: Exclude<Subscription['status'], 'expired'>
   provider: NonNullable<Subscription['provider']>
   current_period_end: number
-  cancel_at_period_end: number
+  cancel_at_period_end: boolean
   provider_subscription_id: string | null
   provider_updated_at: number
 }
@@ -15,14 +15,14 @@ export interface SubscriptionRow {
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
 
 export class SubscriptionService {
-  constructor(readonly db: Database.Database) {}
+  constructor(readonly db: Database) {}
 
-  row(userId: string) {
-    return this.db.prepare('SELECT * FROM subscriptions WHERE user_id = ?').get(userId) as SubscriptionRow | undefined
+  row(userId: string, sql: SqlSession = this.db) {
+    return sql.one<SubscriptionRow>('SELECT * FROM subscriptions WHERE user_id = $1', [userId])
   }
 
-  get(userId: string): Subscription {
-    const row = this.row(userId)
+  async get(userId: string, sql: SqlSession = this.db): Promise<Subscription> {
+    const row = await this.row(userId, sql)
     if (!row) return { plan: 'free', status: 'inactive', provider: null, currentPeriodEnd: 0, cancelAtPeriodEnd: false }
     const eligible = row.status === 'active' || row.status === 'canceled'
     const active = eligible && row.current_period_end > Date.now()
@@ -35,9 +35,10 @@ export class SubscriptionService {
     }
   }
 
-  publicUser(userId: string): AuthUser {
-    const user = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
-    const subscription = this.get(userId)
+  async publicUser(userId: string, sql: SqlSession = this.db): Promise<AuthUser> {
+    const user = await sql.one<UserRow>('SELECT * FROM users WHERE id = $1', [userId])
+    if (!user) throw new Error('Usuario no encontrado.')
+    const subscription = await this.get(userId, sql)
     const premium = subscription.plan === 'pro'
     return {
       id: user.id, email: user.email, name: user.name,
@@ -49,32 +50,37 @@ export class SubscriptionService {
   }
 
   grant(userId: string, provider: 'manual' | 'local') {
-    return this.db.transaction(() => {
-      if (this.row(userId)?.provider === 'polar') return null
-      const current = this.get(userId)
+    return this.db.transaction(async (sql) => {
+      await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
+      if ((await this.row(userId, sql))?.provider === 'polar') return null
+      const current = await this.get(userId, sql)
       const until = (current.plan === 'pro' ? current.currentPeriodEnd : Date.now()) + MONTH_MS
-      this.db.prepare(`INSERT INTO subscriptions (user_id, status, provider, current_period_end, updated_at)
-        VALUES (?, 'active', ?, ?, ?)
+      await sql.query(`INSERT INTO subscriptions (user_id, status, provider, current_period_end, updated_at)
+        VALUES ($1, 'active', $2, $3, $4)
         ON CONFLICT(user_id) DO UPDATE SET status = 'active', provider = excluded.provider,
-          current_period_end = excluded.current_period_end, cancel_at_period_end = 0, updated_at = excluded.updated_at`
-      ).run(userId, provider, until, Date.now())
-      return this.publicUser(userId)
-    })()
+          current_period_end = excluded.current_period_end, cancel_at_period_end = FALSE, updated_at = excluded.updated_at`,
+        [userId, provider, until, Date.now()])
+      return this.publicUser(userId, sql)
+    })
   }
 
   revoke(userId: string) {
-    if (this.row(userId)?.provider === 'polar') return null
-    this.db.prepare(`UPDATE subscriptions SET status = 'revoked', current_period_end = ?,
-      cancel_at_period_end = 0, updated_at = ? WHERE user_id = ?`).run(Date.now(), Date.now(), userId)
-    return this.publicUser(userId)
+    return this.db.transaction(async (sql) => {
+      await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
+      if ((await this.row(userId, sql))?.provider === 'polar') return null
+      await sql.query(`UPDATE subscriptions SET status = 'revoked', current_period_end = $1,
+        cancel_at_period_end = FALSE, updated_at = $2 WHERE user_id = $3`, [Date.now(), Date.now(), userId])
+      return this.publicUser(userId, sql)
+    })
   }
 
   consumeExport(userId: string) {
-    return this.db.transaction(() => {
-      const user = this.publicUser(userId)
+    return this.db.transaction(async (sql) => {
+      await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
+      const user = await this.publicUser(userId, sql)
       if (!user.premium && user.remainingFree === 0) return { allowed: false, user }
-      this.db.prepare('UPDATE users SET export_count = export_count + 1 WHERE id = ?').run(userId)
-      return { allowed: true, user: this.publicUser(userId) }
-    })()
+      await sql.query('UPDATE users SET export_count = export_count + 1 WHERE id = $1', [userId])
+      return { allowed: true, user: await this.publicUser(userId, sql) }
+    })
   }
 }

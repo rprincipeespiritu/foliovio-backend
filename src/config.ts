@@ -1,12 +1,10 @@
-import { fileURLToPath } from 'node:url'
-
 export interface Config {
   isProd: boolean
   port: number
   appOrigin: string
   jwtSecret: string
   adminSecret: string
-  databasePath: string
+  databaseUrl: string
   cookieSameSite: 'lax' | 'none' | 'strict'
   polarWebhookSecret: string
   polarProductId: string
@@ -23,10 +21,17 @@ export function readConfig(env = process.env): Config {
   if (cookieSameSite === 'none' && !isProd) throw new Error('SameSite=None requiere cookies seguras en producción.')
   const port = Number(env.PORT || 3001)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT inválido.')
+  const databaseUrl = env.DATABASE_URL || ''
+  try {
+    const url = new URL(databaseUrl)
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || url.pathname.length < 2) throw new Error()
+  } catch {
+    throw new Error('DATABASE_URL debe ser una URL PostgreSQL con servidor y nombre de base de datos.')
+  }
   return {
     isProd, port, appOrigin, jwtSecret,
     adminSecret: env.ADMIN_SECRET || '',
-    databasePath: env.DATABASE_PATH || fileURLToPath(new URL('../data/foliovio.db', import.meta.url)),
+    databaseUrl,
     cookieSameSite: cookieSameSite as Config['cookieSameSite'],
     polarWebhookSecret: env.POLAR_WEBHOOK_SECRET || '',
     polarProductId: env.POLAR_PRODUCT_ID || '',

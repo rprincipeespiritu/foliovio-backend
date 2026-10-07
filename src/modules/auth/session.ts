@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import type Database from 'better-sqlite3'
+import type { Database } from '../../db.js'
 import type { Config } from '../../config.js'
 import type { UserRow } from '../../db.js'
 
@@ -21,14 +21,16 @@ export function clearSession(c: Context, config: Config) {
   deleteCookie(c, COOKIE, { path: '/', secure: config.isProd, sameSite: config.cookieSameSite })
 }
 
-export async function loadUser(c: Context, db: Database.Database, config: Config): Promise<UserRow | null> {
+export async function loadUser(c: Context, db: Database, config: Config): Promise<UserRow | null> {
   const token = getCookie(c, COOKIE)
   if (!token) return null
+  let userId: string
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(config.jwtSecret), { algorithms: ['HS256'] })
     if (typeof payload.sub !== 'string') return null
-    return db.prepare('SELECT * FROM users WHERE id = ?').get(payload.sub) as UserRow | undefined ?? null
+    userId = payload.sub
   } catch {
     return null
   }
+  return await db.one<UserRow>('SELECT * FROM users WHERE id = $1', [userId]) ?? null
 }
