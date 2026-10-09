@@ -11,8 +11,9 @@ import { SubscriptionService } from './modules/subscriptions/service.js'
 import { subscriptionRoutes } from './modules/subscriptions/routes.js'
 import { adminRoutes } from './modules/subscriptions/admin.js'
 import { polarRoutes } from './modules/subscriptions/polar.js'
+import { sendGridMailer, type VerificationMailer } from './modules/auth/mail.js'
 
-export function createApp(db: Database, config: Config) {
+export function createApp(db: Database, config: Config, mailer: VerificationMailer = sendGridMailer(config)) {
   const app = new Hono<AppEnv>()
   const subscriptions = new SubscriptionService(db)
   const origins = config.isProd ? [config.appOrigin] : [config.appOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173']
@@ -35,7 +36,7 @@ export function createApp(db: Database, config: Config) {
       return c.json({ ok: false }, 503)
     }
   })
-  app.route('/api/auth', authRoutes(db, config, subscriptions))
+  app.route('/api/auth', authRoutes(db, config, subscriptions, mailer))
   app.route('/api/billing', subscriptionRoutes(subscriptions, config))
   app.route('/api/admin', adminRoutes(subscriptions, config))
   app.route('/api/webhooks', polarRoutes(subscriptions, config))

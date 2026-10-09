@@ -51,7 +51,7 @@ src/
   db.ts                  Pool PostgreSQL, transacciones y migraciones
   migrate.ts             Comando de migración del esquema
   contracts/api.d.ts     Tipos públicos del contrato HTTP
-  modules/auth/          Registro, login y sesión
+  modules/auth/          Registro, activación por SendGrid, login y sesión
   modules/subscriptions/ Plan, consumo, administración y Polar
 test/                    Pruebas de integración sobre PostgreSQL real
 compose.yaml             PostgreSQL local opcional con Docker
@@ -60,6 +60,8 @@ compose.yaml             PostgreSQL local opcional con Docker
 Cada cuenta tiene su propio registro de suscripción, estado, vencimiento y referencia de proveedor. La primera solicitud de exportación es gratuita; Pro permite solicitudes ilimitadas mientras esté vigente. Las rutas de usuario toman el ID de la sesión, nunca de un `userId` enviado por el cliente. Activación, revocación y consumo bloquean la fila del usuario con `FOR UPDATE` dentro de una transacción para serializar cambios, incluso entre varias instancias del backend. Las entregas de webhooks se registran atómicamente; una falla revierte también su marca de procesamiento.
 
 ## Configuración
+
+Para el registro con confirmación por correo, sigue [la guía de SendGrid](docs/sendgrid.md). Las cuentas nuevas quedan pendientes hasta activar el enlace; las cuentas anteriores conservan acceso mediante la migración de compatibilidad.
 
 Consulta `.env.example`. En producción:
 
@@ -78,7 +80,9 @@ Las migraciones se aplican automáticamente antes de escuchar solicitudes y tamb
 | Método y ruta | Acceso | Función |
 | --- | --- | --- |
 | `GET /api/health` | Público | Disponibilidad |
-| `POST /api/auth/register` | Público | Crear cuenta con `email`, `password`, `name` |
+| `POST /api/auth/register` | Público | Crear cuenta pendiente y enviar activación; responde 201 sin sesión |
+| `POST /api/auth/verify-email` | Token | Activar la cuenta con `{ "token": "..." }`; no inicia sesión |
+| `POST /api/auth/resend-verification` | Público | Solicitar otro enlace con `{ "email": "..." }` |
 | `POST /api/auth/login` | Público | Iniciar sesión con `email`, `password` |
 | `POST /api/auth/logout` | Cookie | Cerrar sesión |
 | `GET /api/auth/me` | Cookie | Usuario y plan, o `user: null` |
@@ -101,6 +105,8 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3001/api/admin/grant `
 El contrato de respuestas está en `src/contracts/api.d.ts`; las fechas públicas son milisegundos desde Unix epoch. El frontend mantiene su propia copia para no necesitar un tercer repositorio o paquete privado. Mantén compatible la API o coordina la actualización del cliente cuando cambies el contrato. Esta entrega permite administración por API, sin panel administrativo ni portal de autoservicio.
 
 ## Polar
+
+La activación de cuenta por correo y la activación de la suscripción Pro son procesos independientes. Confirmar un correo no concede Pro.
 
 Configura un producto recurrente y un endpoint **Raw** en `https://api.ejemplo.com/api/webhooks/polar`. Suscríbelo a `subscription.created`, `subscription.updated`, `subscription.active`, `subscription.canceled`, `subscription.uncanceled`, `subscription.revoked` y `subscription.past_due`. También se aceptan `subscription.cycled`, `subscription.paused` y `subscription.resumed` si tu versión los ofrece.
 

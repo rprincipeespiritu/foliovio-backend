@@ -7,13 +7,15 @@ import { readConfig, type Config } from '../src/config.js'
 import { migrate, openDatabase } from '../src/db.js'
 import { testDatabase } from './database.js'
 import { SubscriptionService } from '../src/modules/subscriptions/service.js'
+import type { VerificationEmail } from '../src/modules/auth/mail.js'
 
 const secret = `whsec_${Buffer.from('test-polar-signing-key-32-bytes!!!').toString('base64')}`
 
 async function fixture(overrides: Partial<Config> = {}) {
   const { db, url, schema, cleanup } = await testDatabase()
   const config = { ...readConfig({ DATABASE_URL: url }), adminSecret: 'test-admin', polarWebhookSecret: secret, polarProductId: 'product-pro', ...overrides }
-  const app = createApp(db, config)
+  const emails: VerificationEmail[] = []
+  const app = createApp(db, config, async (message) => { emails.push(message) })
   const subscriptions = new SubscriptionService(db)
   const request = async (path: string, body?: unknown, headers: Record<string, string> = {}) => app.request(path, {
     method: body === undefined ? 'GET' : 'POST',
@@ -22,9 +24,14 @@ async function fixture(overrides: Partial<Config> = {}) {
   })
   const register = async (email: string) => {
     const response = await request('/api/auth/register', { email, password: 'password-123', name: 'Test' })
-    assert.equal(response.status, 200)
-    const { user } = await response.json()
-    return { user, cookie: response.headers.get('set-cookie')!.split(';')[0] }
+    assert.equal(response.status, 201)
+    assert.equal(response.headers.get('set-cookie'), null)
+    const token = new URLSearchParams(new URL(emails.at(-1)!.url).hash.slice(1)).get('verify-email')
+    assert.equal((await request('/api/auth/verify-email', { token })).status, 200)
+    const login = await request('/api/auth/login', { email, password: 'password-123' })
+    assert.equal(login.status, 200)
+    const { user } = await login.json()
+    return { user, cookie: login.headers.get('set-cookie')!.split(';')[0] }
   }
   const webhook = async (payload: unknown, id = randomUUID(), legacy = false, timestamp = new Date()) => {
     const body = JSON.stringify(payload)
@@ -132,7 +139,7 @@ test('PostgreSQL migrations can run concurrently and preserve existing data', as
   await f.subscriptions.revoke(a.user.id)
   await Promise.all([migrate(f.db), migrate(f.db), migrate(f.db)])
   assert.equal((await f.subscriptions.get(a.user.id)).status, 'revoked')
-  assert.equal((await f.db.one<{ count: number }>('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 1)
+  assert.equal((await f.db.one<{ count: number }>('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 2)
 })
 
 test('webhooks reject missing secrets, forged signatures and expired signatures', async (t) => {

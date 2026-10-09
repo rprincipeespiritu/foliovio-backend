@@ -1,3 +1,8 @@
+export interface RegistrationResult {
+  verificationRequired: true
+  message: string
+}
+
 export interface Subscription {
   plan: 'free' | 'pro'
   status: 'inactive' | 'active' | 'canceled' | 'past_due' | 'revoked' | 'expired'

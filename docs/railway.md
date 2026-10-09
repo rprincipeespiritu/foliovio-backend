@@ -25,6 +25,8 @@ En las opciones de origen de cada servicio selecciona `prd` explícitamente; `ra
 
 ## Variables del backend
 
+La activación de cuentas requiere `SENDGRID_API_KEY`, `EMAIL_FROM` y, opcionalmente, `EMAIL_FROM_NAME`. Configúralas antes de publicar la versión con verificación. Consulta [SendGrid y activación](sendgrid.md).
+
 | Variable | Valor previsto |
 | --- | --- |
 | `NODE_ENV` | `production` (también lo establece la imagen) |

@@ -14,6 +14,7 @@ export interface UserRow {
   name: string
   created_at: number
   export_count: number
+  email_verified_at: number | null
 }
 
 export class SqlSession {
@@ -54,8 +55,8 @@ export async function migrate(db: Database) {
     // Serializes schema changes when several API instances start together.
     await sql.query('SELECT pg_advisory_xact_lock(1718578281, 1)')
     await sql.query('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)')
-    if (await sql.one('SELECT version FROM schema_migrations WHERE version = 1')) return
-    await sql.query(`
+    if (!(await sql.one('SELECT version FROM schema_migrations WHERE version = 1'))) {
+      await sql.query(`
       CREATE TABLE users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
@@ -76,7 +77,24 @@ export async function migrate(db: Database) {
       );
       CREATE TABLE webhook_events (id TEXT PRIMARY KEY, processed_at BIGINT NOT NULL);
       INSERT INTO schema_migrations (version) VALUES (1);
-    `)
+      `)
+    }
+    if (!(await sql.one('SELECT version FROM schema_migrations WHERE version = 2'))) {
+      await sql.query(`
+        ALTER TABLE users ADD COLUMN email_verified_at BIGINT;
+        -- Preserve access for accounts created before email activation was introduced.
+        UPDATE users SET email_verified_at = created_at;
+        CREATE TABLE email_verifications (
+          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT UNIQUE,
+          expires_at BIGINT NOT NULL DEFAULT 0,
+          last_attempt_at BIGINT NOT NULL,
+          window_started_at BIGINT NOT NULL,
+          attempts INTEGER NOT NULL
+        );
+        INSERT INTO schema_migrations (version) VALUES (2);
+      `)
+    }
   })
 }
 

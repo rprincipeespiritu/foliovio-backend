@@ -32,5 +32,5 @@ export async function loadUser(c: Context, db: Database, config: Config): Promis
   } catch {
     return null
   }
-  return await db.one<UserRow>('SELECT * FROM users WHERE id = $1', [userId]) ?? null
+  return await db.one<UserRow>('SELECT * FROM users WHERE id = $1 AND email_verified_at IS NOT NULL', [userId]) ?? null
 }
