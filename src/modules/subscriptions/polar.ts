@@ -71,6 +71,7 @@ export function polarRoutes(service: SubscriptionService, config: Config) {
       if (!user) throw new HTTPException(409, { message: 'No existe una cuenta para este cliente de Polar.' })
       await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [user.id])
       const current = await service.row(user.id, sql)
+      if (current?.provider === 'paddle') throw new HTTPException(409, { message: 'La cuenta se gestiona desde Paddle.' })
       if (current && current.provider_updated_at >= version) {
         return { ignored: true }
       }

@@ -68,7 +68,7 @@ Consulta `.env.example`. En producción:
 - Define `NODE_ENV=production`, `JWT_SECRET` aleatorio de al menos 32 caracteres y `APP_ORIGIN` con la URL exacta del frontend.
 - Configura `DATABASE_URL` con la conexión de PostgreSQL. En Railway, enlaza la variable de conexión del servicio PostgreSQL al backend; la base debe existir. Para conexiones externas usa el TLS y el certificado que indique el proveedor; una URL con `sslmode=verify-full` solicita verificación del certificado. No se deshabilita la verificación TLS en el código.
 - Configura `ADMIN_SECRET` para habilitar administración manual. Vacío deshabilita esas rutas.
-- Configura `POLAR_WEBHOOK_SECRET` y `POLAR_PRODUCT_ID` para recibir eventos de Polar.
+- Para Paddle, configura `PADDLE_ENVIRONMENT`, `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET` y `PADDLE_PRICE_ID`. Sigue [la guía de Paddle](docs/paddle.md). Polar se conserva para contratos anteriores.
 - Usa HTTPS. `COOKIE_SAME_SITE=lax` funciona con el mismo origen o subdominios del mismo sitio; `none` requiere producción y cookies seguras para sitios distintos. Algunos navegadores bloquean cookies de terceros: un dominio compartido o proxy `/api` evita esa dependencia.
 
 Varias réplicas de la API pueden compartir PostgreSQL. Cada proceso tiene un pool de hasta 10 conexiones: considera el total al dimensionar el servidor. No hace falta un volumen de datos en el backend; la persistencia y los respaldos pertenecen al servicio PostgreSQL.
@@ -87,12 +87,16 @@ Las migraciones se aplican automáticamente antes de escuchar solicitudes y tamb
 | `POST /api/auth/logout` | Cookie | Cerrar sesión |
 | `GET /api/auth/me` | Cookie | Usuario y plan, o `user: null` |
 | `GET /api/billing/subscription` | Usuario | Consultar su suscripción |
+| `GET /api/billing/config` | Público | Configuración pública de Paddle y precio mensual |
+| `POST /api/billing/checkout` | Usuario verificado | Crear o reutilizar su transacción de Paddle |
+| `POST /api/billing/portal` | Usuario verificado | Generar acceso temporal a su portal de Paddle |
 | `POST /api/billing/export` | Usuario | Autorizar y consumir una exportación |
 | `POST /api/billing/activate` | Usuario, desarrollo | Activar Pro de prueba |
 | `GET /api/admin/subscriptions/:userId` | `x-admin-secret` | Consultar una cuenta |
 | `POST /api/admin/grant` | `x-admin-secret` | Agregar 30 días de Pro manual |
 | `POST /api/admin/revoke` | `x-admin-secret` | Revocar Pro manual |
 | `POST /api/webhooks/polar` | Firma | Sincronizar Polar |
+| `POST /api/webhooks/paddle` | Firma HMAC | Sincronizar Paddle, renovaciones y bajas |
 
 Las rutas administrativas `grant` y `revoke` reciben `{"userId":"..."}` o `{"email":"cliente@email.com"}`. Ejemplo en PowerShell:
 
@@ -102,7 +106,11 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3001/api/admin/grant `
   -Headers $headers -ContentType application/json -Body '{"email":"cliente@email.com"}'
 ```
 
-El contrato de respuestas está en `src/contracts/api.d.ts`; las fechas públicas son milisegundos desde Unix epoch. El frontend mantiene su propia copia para no necesitar un tercer repositorio o paquete privado. Mantén compatible la API o coordina la actualización del cliente cuando cambies el contrato. Esta entrega permite administración por API, sin panel administrativo ni portal de autoservicio.
+El contrato de respuestas está en `src/contracts/api.d.ts`; las fechas públicas son milisegundos desde Unix epoch. El frontend mantiene su propia copia para no necesitar un tercer repositorio o paquete privado. Mantén compatible la API o coordina la actualización del cliente cuando cambies el contrato. La administración manual es por API; los clientes de Paddle usan su portal de autoservicio desde Mi cuenta.
+
+## Paddle
+
+Consulta [configuración y pruebas con Paddle Billing](docs/paddle.md). El backend fija el precio y el usuario antes de abrir el checkout. La firma del webhook, su ID y fecha controlan la actualización del plan. La migración 3 conserva los datos existentes. El frontend no puede activar Pro a través de una URL de retorno ni del evento de checkout completado.
 
 ## Polar
 

@@ -28,7 +28,7 @@ export function adminRoutes(service: SubscriptionService, config: Config) {
         : await service.db.one<{ id: string }>('SELECT id FROM users WHERE email = $1', [email])
       if (!row) return c.json({ error: 'Usuario no encontrado.' }, 404)
       const user = action === 'grant' ? await service.grant(row.id, 'manual') : await service.revoke(row.id)
-      if (!user) return c.json({ error: 'Gestiona esta suscripción desde Polar para mantener los cobros sincronizados.' }, 409)
+      if (!user) return c.json({ error: 'Gestiona esta suscripción desde su proveedor de pagos para mantener los cobros sincronizados.' }, 409)
       return c.json({ user })
     })
   }

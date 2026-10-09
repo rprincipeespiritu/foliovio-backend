@@ -10,12 +10,13 @@ export interface SubscriptionRow {
   cancel_at_period_end: boolean
   provider_subscription_id: string | null
   provider_updated_at: number
+  provider_environment: string | null
 }
 
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
 
 export class SubscriptionService {
-  constructor(readonly db: Database) {}
+  constructor(readonly db: Database, readonly paddleEnvironment?: 'sandbox' | 'production') {}
 
   row(userId: string, sql: SqlSession = this.db) {
     return sql.one<SubscriptionRow>('SELECT * FROM subscriptions WHERE user_id = $1', [userId])
@@ -25,10 +26,11 @@ export class SubscriptionService {
     const row = await this.row(userId, sql)
     if (!row) return { plan: 'free', status: 'inactive', provider: null, currentPeriodEnd: 0, cancelAtPeriodEnd: false }
     const eligible = row.status === 'active' || row.status === 'canceled'
-    const active = eligible && row.current_period_end > Date.now()
+    const wrongEnvironment = row.provider === 'paddle' && this.paddleEnvironment && row.provider_environment !== this.paddleEnvironment
+    const active = !wrongEnvironment && eligible && row.current_period_end > Date.now()
     return {
       plan: active ? 'pro' : 'free',
-      status: eligible && !active ? 'expired' : row.status,
+      status: wrongEnvironment ? 'inactive' : eligible && !active ? 'expired' : row.status,
       provider: row.provider,
       currentPeriodEnd: row.current_period_end,
       cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
@@ -52,7 +54,7 @@ export class SubscriptionService {
   grant(userId: string, provider: 'manual' | 'local') {
     return this.db.transaction(async (sql) => {
       await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
-      if ((await this.row(userId, sql))?.provider === 'polar') return null
+      if (['polar', 'paddle'].includes((await this.row(userId, sql))?.provider || '')) return null
       const current = await this.get(userId, sql)
       const until = (current.plan === 'pro' ? current.currentPeriodEnd : Date.now()) + MONTH_MS
       await sql.query(`INSERT INTO subscriptions (user_id, status, provider, current_period_end, updated_at)
@@ -67,7 +69,7 @@ export class SubscriptionService {
   revoke(userId: string) {
     return this.db.transaction(async (sql) => {
       await sql.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId])
-      if ((await this.row(userId, sql))?.provider === 'polar') return null
+      if (['polar', 'paddle'].includes((await this.row(userId, sql))?.provider || '')) return null
       await sql.query(`UPDATE subscriptions SET status = 'revoked', current_period_end = $1,
         cancel_at_period_end = FALSE, updated_at = $2 WHERE user_id = $3`, [Date.now(), Date.now(), userId])
       return this.publicUser(userId, sql)

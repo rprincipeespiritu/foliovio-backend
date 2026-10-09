@@ -95,6 +95,22 @@ export async function migrate(db: Database) {
         INSERT INTO schema_migrations (version) VALUES (2);
       `)
     }
+    if (!(await sql.one('SELECT version FROM schema_migrations WHERE version = 3'))) {
+      await sql.query(`
+        ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_provider_check;
+        ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_provider_check
+          CHECK(provider IN ('manual', 'local', 'legacy', 'polar', 'paddle'));
+        ALTER TABLE subscriptions ADD COLUMN provider_environment TEXT;
+        CREATE TABLE paddle_customers (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          environment TEXT NOT NULL CHECK(environment IN ('sandbox', 'production')),
+          customer_id TEXT NOT NULL,
+          checkout_transaction_id TEXT,
+          PRIMARY KEY(user_id, environment), UNIQUE(customer_id, environment)
+        );
+        INSERT INTO schema_migrations (version) VALUES (3);
+      `)
+    }
   })
 }
 

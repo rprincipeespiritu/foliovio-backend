@@ -94,7 +94,7 @@ Invoke-RestMethod "$foliovioUrl/api/health"
 Invoke-RestMethod "$foliovioUrl/api/auth/me"
 ```
 
-Sin `VITE_CHECKOUT_URL`, `VITE_WHATSAPP` o `VITE_CONTACT_EMAIL`, la interfaz informa que las suscripciones aún no están disponibles. Configura y comprueba Polar siguiendo el README del backend antes de habilitar su enlace de compra. La activación Pro de prueba se bloquea en producción.
+Para suscripciones, configura en el backend las cinco variables `PADDLE_*` siguiendo [la guía de Paddle](paddle.md). El destino público puede ser `https://www.foliovio.com/api/webhooks/paddle`. Prueba primero en sandbox con una base separada y utiliza credenciales live al publicar producción. El frontend consulta la configuración pública y no necesita secretos de Paddle. La activación Pro de prueba se bloquea en producción.
 
 ## Diagnóstico y siguientes versiones
 

@@ -6,7 +6,7 @@ export interface RegistrationResult {
 export interface Subscription {
   plan: 'free' | 'pro'
   status: 'inactive' | 'active' | 'canceled' | 'past_due' | 'revoked' | 'expired'
-  provider: 'manual' | 'local' | 'legacy' | 'polar' | null
+  provider: 'manual' | 'local' | 'legacy' | 'polar' | 'paddle' | null
   currentPeriodEnd: number
   cancelAtPeriodEnd: boolean
 }

@@ -18,7 +18,7 @@ export function subscriptionRoutes(service: SubscriptionService, config: Config)
   routes.post('/activate', async (c) => {
     if (config.isProd) return c.json({ error: 'Pro se activa cuando se confirma el pago.' }, 403)
     const user = await service.grant(c.get('user')!.id, 'local')
-    if (!user) return c.json({ error: 'Esta suscripción se gestiona desde Polar.' }, 409)
+    if (!user) return c.json({ error: 'Esta suscripción se gestiona desde su proveedor de pagos.' }, 409)
     return c.json({ user })
   })
   return routes

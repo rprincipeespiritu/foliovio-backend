@@ -139,7 +139,7 @@ test('PostgreSQL migrations can run concurrently and preserve existing data', as
   await f.subscriptions.revoke(a.user.id)
   await Promise.all([migrate(f.db), migrate(f.db), migrate(f.db)])
   assert.equal((await f.subscriptions.get(a.user.id)).status, 'revoked')
-  assert.equal((await f.db.one<{ count: number }>('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 2)
+  assert.equal((await f.db.one<{ count: number }>('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 3)
 })
 
 test('webhooks reject missing secrets, forged signatures and expired signatures', async (t) => {
