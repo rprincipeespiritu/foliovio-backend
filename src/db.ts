@@ -111,6 +111,18 @@ export async function migrate(db: Database) {
         INSERT INTO schema_migrations (version) VALUES (3);
       `)
     }
+    if (!(await sql.one('SELECT version FROM schema_migrations WHERE version = 4'))) {
+      await sql.query(`
+        CREATE TABLE auth_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          last_activity_at BIGINT NOT NULL,
+          expires_at BIGINT NOT NULL
+        );
+        CREATE INDEX auth_sessions_user_id ON auth_sessions(user_id);
+        INSERT INTO schema_migrations (version) VALUES (4);
+      `)
+    }
   })
 }
 

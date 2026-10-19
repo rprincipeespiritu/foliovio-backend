@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
-import { SignJWT } from 'jose'
+import { createSession } from '../src/modules/auth/session.js'
 import { createApp } from '../src/app.js'
 import { readConfig } from '../src/config.js'
 import { migrate, openDatabase } from '../src/db.js'
@@ -51,8 +51,8 @@ test('pending registration sends a hashed single-use token and cannot authentica
   assert.equal((await f.request('login', { email: 'test@example.test', password: 'wrong' })).status, 401)
   // Even a previously issued/signed session must not authorize a pending account.
   const user = await f.db.one('SELECT id FROM users')
-  const session = await new SignJWT({ sub: user!.id }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('1h').sign(new TextEncoder().encode(f.config.jwtSecret))
-  assert.deepEqual(await (await f.request('me', undefined, `foliovio_session=${session}`)).json(), { user: null })
+  const { token: session } = await createSession(f.db, user!.id, f.config)
+  assert.deepEqual(await (await f.request('me', undefined, `foliovio_session=${session}`)).json(), { user: null, session: null })
   assert.equal((await f.app.request('/api/billing/export', { method: 'POST', headers: { cookie: `foliovio_session=${session}` } })).status, 401)
   assert.equal((await f.request(`verify-email?token=${token}`)).status, 404)
   const activated = await f.request('verify-email', { token })

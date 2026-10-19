@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 import { test } from 'node:test'
-import { SignJWT } from 'jose'
+import { createSession } from '../src/modules/auth/session.js'
 import { createApp } from '../src/app.js'
 import { readConfig } from '../src/config.js'
 import { migrate, openDatabase } from '../src/db.js'
@@ -47,7 +47,7 @@ async function fixture() {
   const account = async (number: number, verified = true) => {
     const userId = `user-${number}`
     await database.db.query('INSERT INTO users (id,email,password_hash,name,created_at,email_verified_at) VALUES ($1,$2,$3,$4,$5,$6)', [userId, `user${number}@example.test`, 'unused', 'Test', Date.now(), verified ? Date.now() : null])
-    const token = await new SignJWT({ sub: userId }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('1h').sign(new TextEncoder().encode(config.jwtSecret))
+    const { token } = await createSession(database.db, userId, config)
     const cookie = `foliovio_session=${token}`
     const request = (path: string, body?: unknown, origin?: string) => app.request(`/api/billing/${path}`, {
       method: body === undefined ? 'GET' : 'POST', headers: { cookie, 'content-type': 'application/json', ...(origin ? { origin } : {}) },
@@ -209,6 +209,6 @@ test('Paddle configuration is optional and migration preserves existing subscrip
     DELETE FROM schema_migrations WHERE version = 3`)
   await Promise.all([migrate(f.db), migrate(f.db)])
   assert.deepEqual(await f.service.publicUser(a.userId), before)
-  assert.equal((await f.db.one('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 3)
+  assert.equal((await f.db.one('SELECT COUNT(*) AS count FROM schema_migrations'))!.count, 4)
   assert.throws(() => readConfig({ DATABASE_URL: f.url, PADDLE_ENVIRONMENT: 'production', PADDLE_CLIENT_TOKEN: 'test_wrong' }))
 })

@@ -6,7 +6,7 @@ import type { Config } from '../../config.js'
 import type { UserRow } from '../../db.js'
 import type { AppEnv } from '../../types.js'
 import type { SubscriptionService } from '../subscriptions/service.js'
-import { clearSession, setSession } from './session.js'
+import { clearSession, setSession, sessionInfo, IDLE_TIMEOUT_MS } from './session.js'
 import { MailDeliveryError, type VerificationMailer } from './mail.js'
 import { EmailVerification } from './verification.js'
 
@@ -51,12 +51,32 @@ export function authRoutes(db: Database, config: Config, subscriptions: Subscrip
     if (user.email_verified_at === null) {
       return c.json({ code: 'EMAIL_NOT_VERIFIED', error: 'Activa tu cuenta desde el enlace que enviamos a tu correo antes de entrar.' }, 403)
     }
-    await setSession(c, user.id, config)
-    return c.json({ user: await subscriptions.publicUser(user.id) })
+    await setSession(c, user.id, db, config)
+    return c.json({ user: await subscriptions.publicUser(user.id), session: sessionInfo(c) })
   })
-  routes.post('/logout', (c) => {
-    clearSession(c, config)
+  routes.post('/logout', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    await clearSession(c, db, config, typeof body?.sessionId === 'string' ? body.sessionId : undefined)
     return c.json({ ok: true })
+  })
+  routes.post('/activity', async (c) => {
+    const session = c.get('session')
+    const body = await c.req.json().catch(() => null)
+    if (!c.get('user') || !session || body?.sessionId !== session.id) {
+      return c.json({ code: 'SESSION_EXPIRED', error: 'Tu sesión caducó. Vuelve a iniciar sesión.' }, 401)
+    }
+    // Report the elapsed idle time so batching does not count as user interaction.
+    const idleMs = body?.idleMs
+    if (!Number.isFinite(idleMs) || idleMs < 0 || idleMs >= IDLE_TIMEOUT_MS) return c.json({ error: 'Actividad inválida.' }, 400)
+    const now = Date.now()
+    const updated = await db.one<{ expires_at: number }>(`UPDATE auth_sessions
+      SET last_activity_at = GREATEST(last_activity_at, $2)
+      WHERE id = $1 AND last_activity_at > $3 AND expires_at > $4
+      RETURNING LEAST(last_activity_at + $5, expires_at) AS expires_at`,
+      [session.id, now - Math.floor(idleMs), now - IDLE_TIMEOUT_MS, now, IDLE_TIMEOUT_MS])
+    if (!updated) return c.json({ code: 'SESSION_EXPIRED', error: 'Tu sesión caducó. Vuelve a iniciar sesión.' }, 401)
+    c.set('session', { id: session.id, expiresAt: updated.expires_at })
+    return c.json({ session: sessionInfo(c) })
   })
   routes.post('/resend-verification', async (c) => {
     const body = await c.req.json().catch(() => null)
@@ -78,7 +98,7 @@ export function authRoutes(db: Database, config: Config, subscriptions: Subscrip
   })
   routes.get('/me', async (c) => {
     const user = c.get('user')
-    return c.json({ user: user ? await subscriptions.publicUser(user.id) : null })
+    return c.json({ user: user ? await subscriptions.publicUser(user.id) : null, session: sessionInfo(c) })
   })
   return routes
 }

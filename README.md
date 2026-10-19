@@ -134,6 +134,25 @@ Consulta [la guía de Railway](docs/railway.md) para las variables, el flujo ent
 
 ## Pruebas
 
+### Sesiones e inactividad
+
+Las sesiones caducan tras 10 minutos sin interacción y se guardan en PostgreSQL
+(`auth_sessions`, migración 4). El JWT sigue en una cookie HttpOnly, pero solo es
+válido mientras su sesión exista, no haya caducado por inactividad y no supere
+el límite absoluto de 30 días. Salir revoca también la sesión del servidor.
+
+`POST /api/auth/login` y `GET /api/auth/me` devuelven `session: { id, remainingMs }`
+(o `null` sin sesión). Únicamente `POST /api/auth/activity`, con
+`{ sessionId, idleMs }`, actualiza la última interacción de una sesión vigente.
+`idleMs` expresa los milisegundos transcurridos desde la interacción real;
+las consultas automáticas de perfil, plan o pagos no renuevan el plazo.
+`POST /api/auth/logout` acepta `sessionId` para evitar que una pestaña antigua
+cierre otra sesión más reciente. Una sesión vencida requiere otro login.
+
+Desplegar backend y frontend juntos. La migración se aplica al arrancar y
+conserva cuentas y suscripciones; las cookies anteriores sin sesión persistida
+requieren iniciar sesión nuevamente. No se necesitan variables nuevas.
+
 Configura `TEST_DATABASE_URL` apuntando a una base exclusiva de pruebas y ejecuta `npm test`. Nunca se utiliza `DATABASE_URL` como fallback. Cada fixture crea un esquema `foliovio_test_<id>` aislado y lo elimina al terminar; necesita permiso `CREATE` sobre la base. No se truncan ni eliminan tablas ajenas a esos esquemas.
 
 Se prueban registro y sesión, aislamiento entre cuentas, límites y activaciones concurrentes usando pools distintos, reintentos concurrentes de webhooks, rollback y migraciones repetidas. El workflow de CI arranca su propio servicio PostgreSQL 18. El linter y la compilación pueden ejecutarse sin conexión a una base.
